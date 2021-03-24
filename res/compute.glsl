@@ -1,8 +1,14 @@
 #version 430
-layout(local_size_x = 32, local_size_y = 32) in;
+layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba32f, binding = 0) uniform image2D img_output;
+layout(binding = 1) uniform sampler2D u_texture;
 
 uniform mat4 ProjectionViewMatrix;
+
+layout(std430, binding = 0) buffer layoutName
+{
+    int blocks[16 * 16 * 16];
+};
 
 struct Ray
 {
@@ -15,6 +21,7 @@ struct RayTraceResult
     bool Hit;
     ivec3 PrevLocation;
     ivec3 CurrentLocation;
+    vec3 HitPos;
 };
 
 vec3 GetWorldPosition(float x, float y, float projectionZPos)
@@ -67,14 +74,19 @@ float noise(vec3 p){
     return o4.y * d.y + o4.x * (1.0 - d.y);
 }
 
+int GetIndex(int x, int y, int z)
+{
+    return (x * 16 + z) * 16 + y;
+}
+
 bool IsBlockHit(ivec3 location)
 {
     float d = distance(ivec3(0,0,0), location);
 
-    if(d > 20) {
+    if(d > 10) {
         float val = noise(location * 0.1);
 
-        if(val > 0.5) {
+        if (val > 0.5) {
             return true;
         }
     }
@@ -87,14 +99,14 @@ bool IsBlockHit(ivec3 location)
 
 RayTraceResult RayTraceBlocks(vec3 start, vec3 direction, float maxDistance)
 {
-    RayTraceResult result = RayTraceResult(false, ivec3(0), ivec3(0));
+    RayTraceResult result = RayTraceResult(false, ivec3(0), ivec3(0), vec3(0));
 
     float _bin_size = 1.0;
 
     vec3 ray_start = start;
     vec3 ray_end = start + direction * maxDistance;
 
-    vec3 ray = ray_end-ray_start;
+    vec3 ray = normalize(ray_end-ray_start);
 
     ivec3 current_voxel = ivec3(floor(ray_start[0]/_bin_size), floor(ray_start[1]/_bin_size), floor(ray_start[2]/_bin_size));
     ivec3 last_voxel = ivec3(floor(ray_end[0]/_bin_size), floor(ray_end[1]/_bin_size), floor(ray_end[2]/_bin_size));
@@ -135,6 +147,8 @@ RayTraceResult RayTraceBlocks(vec3 start, vec3 direction, float maxDistance)
 
     ivec3 prevLoc = current_voxel;
 
+    int iterCount = 0;
+
     while(last_voxel != current_voxel) {
         if (tMaxX < tMaxY) {
             if (tMaxX < tMaxZ) {
@@ -158,10 +172,15 @@ RayTraceResult RayTraceBlocks(vec3 start, vec3 direction, float maxDistance)
             result.Hit = true;
             result.PrevLocation = prevLoc;
             result.CurrentLocation = current_voxel;
+            result.HitPos = vec3(tMaxX, tMaxY, tMaxZ);
+            result.HitPos = abs(result.HitPos);
             return result;
         }
 
         prevLoc = current_voxel;
+        iterCount++;
+
+        if(iterCount > 10000) break;
     }
 
     return result;
@@ -186,7 +205,7 @@ void main() {
     vec3 skyColor = GetSkyColor(ray, vec3(0.0, 0, 0));
     pixel.rgb = skyColor;
 
-    RayTraceResult val = RayTraceBlocks(ray.Origin, ray.Direction, 100);
+    RayTraceResult val = RayTraceBlocks(ray.Origin, ray.Direction, 50);
 
     if(val.Hit) {
         vec3 normal = normalize(val.CurrentLocation - val.PrevLocation);
@@ -194,7 +213,19 @@ void main() {
         float light = dot(normal, normalize(vec3(0.5, 0.5, 0.5)));
         light = clamp(light, 0.2, 1.0);
 
+        vec2 uv = vec2(0.0);
+
+        if(val.HitPos.x <= 0.01) {
+            uv = val.HitPos.yz;
+        } else if(val.HitPos.y <= 0.01) {
+            uv = val.HitPos.xz;
+        } else if(val.HitPos.z <= 0.01) {
+            uv = val.HitPos.xy;
+        }
+
         pixel.rgb = vec3(light);
+        pixel.rgb = texture(u_texture, val.HitPos.xz).rgb;
+        pixel.rgb = val.CurrentLocation / 100.0;
     }
 
     // output to a specific pixel in the image

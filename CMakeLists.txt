@@ -9,7 +9,7 @@ add_compile_options("$<$<CONFIG:DEBUG>:-DDEBUG>") #define DEBUG
 
 add_subdirectory(lib)
 
-add_executable(RayTracer src/main.cpp src/Engine/Shader.cpp src/Engine/Shader.hpp src/Engine/GL.hpp src/Engine/ShaderProgram.hpp)
+add_executable(RayTracer src/main.cpp src/Engine/Shader.cpp src/Engine/Shader.hpp src/Engine/GL.hpp src/Engine/ShaderProgram.hpp src/Engine/stb_image.h)
 
 target_link_libraries(RayTracer PUBLIC glad glfw glm)
 
